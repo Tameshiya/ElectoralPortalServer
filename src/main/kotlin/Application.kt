@@ -7,6 +7,7 @@ import io.ktor.http.ContentType
 import io.ktor.response.respondText
 import io.ktor.routing.get
 import io.ktor.routing.routing
+import main.kotlin.entities.CarouselNews
 import main.kotlin.entities.News
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
@@ -35,6 +36,33 @@ fun Application.module(testing: Boolean = false) {
             val result: MutableList<News> = java.util.ArrayList()
             while (resultSet.next()) {
                 result.add(News(resultSet))
+            }
+            call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
+        }
+
+        get("/news/{id}") {
+            val newsId = call.parameters["id"]!!.toInt()
+            val statement = connection.prepareStatement("SELECT * FROM news WHERE id = ?")
+            statement.setInt(1, newsId)
+            val resultSet = statement.executeQuery()
+            resultSet.next()
+            val result = News(resultSet)
+            call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
+        }
+
+        get("/carousel") {
+            val limit = call.parameters["limit"]?.toInt()
+            val statement = connection.prepareStatement("""
+                SELECT n.id, n.title, n.description, n.date, np.url FROM news n
+                JOIN news_photos np ON n.id = np.news_id
+                ORDER BY n.id DESC
+                LIMIT ?;
+            """)
+            statement.setInt(1, limit ?: 5)
+            val resultSet = statement.executeQuery()
+            val result: MutableList<CarouselNews> = java.util.ArrayList()
+            while (resultSet.next()) {
+                result.add(CarouselNews(resultSet))
             }
             call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
         }

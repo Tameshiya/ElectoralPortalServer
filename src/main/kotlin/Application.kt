@@ -4,11 +4,14 @@ import com.google.gson.Gson
 import io.ktor.application.Application
 import io.ktor.application.call
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.request.receiveText
+import io.ktor.response.respond
 import io.ktor.response.respondText
 import io.ktor.routing.get
+import io.ktor.routing.post
 import io.ktor.routing.routing
-import main.kotlin.entities.CarouselNews
-import main.kotlin.entities.News
+import main.kotlin.entities.*
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
@@ -64,6 +67,68 @@ fun Application.module(testing: Boolean = false) {
             while (resultSet.next()) {
                 result.add(CarouselNews(resultSet))
             }
+            call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
+        }
+
+        get("/composition") {
+            val statement = connection.createStatement()
+            val resultSet = statement.executeQuery("""
+                SELECT c.id, surname, c.name, patronymic, p.name, offered_by, avatar_url FROM composition c
+                JOIN posts p ON c.post_id = p.id;
+            """.trimIndent())
+            val result: MutableList<Member> = java.util.ArrayList()
+            while (resultSet.next()) {
+                result.add(Member(resultSet))
+            }
+            call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
+        }
+
+        post("/feedback") {
+            val payload = call.receiveText()
+            kotlin.io.println(payload)
+            val news = gson.fromJson<NewFeedback>(payload, NewFeedback::class.java)
+            val statement = connection.prepareStatement("""
+                INSERT INTO feedback (name, email, text) VALUES (?, ?, ?)
+            """.trimIndent())
+            statement.setString(1, news.name)
+            statement.setString(2, news.email)
+            statement.setString(3, news.text)
+            call.respond(if (statement.execute()) HttpStatusCode.OK else HttpStatusCode.InternalServerError)
+        }
+
+        get("scopes") {
+            val statement = connection.createStatement()
+            val resultSet = statement.executeQuery("SELECT * FROM scopes")
+            val result: MutableList<Scope> = java.util.ArrayList()
+            while (resultSet.next()) {
+                result.add(Scope(resultSet))
+            }
+            call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
+        }
+
+        get("docs") {
+            val scope = call.parameters["scope"]?.toInt()
+            val version = (call.parameters["version"]?.toInt()) ?: 1
+            val versionsStatement = connection.prepareStatement("SELECT id, name FROM versions WHERE scope_id = ?")
+            versionsStatement.setInt(1, scope!!)
+            val versionsResultSet = versionsStatement.executeQuery()
+            val versionsResult: MutableList<Version> = java.util.ArrayList()
+            while (versionsResultSet.next()) {
+                versionsResult.add(Version(versionsResultSet))
+            }
+            val docsStatement = connection.prepareStatement("""
+                SELECT d.name, d.url FROM docs d
+                JOIN versions v ON d.version_id = v.id
+                WHERE v.scope_id = ? AND v.id = ?
+            """.trimIndent())
+            docsStatement.setInt(1, scope)
+            docsStatement.setInt(2, version)
+            val resultSet = docsStatement.executeQuery()
+            val docsResult: MutableList<Document> = java.util.ArrayList()
+            while (resultSet.next()) {
+                docsResult.add(Document(resultSet))
+            }
+            val result = VersionDocument(versionsResult, docsResult, version)
             call.respondText(gson.toJson(result), contentType = ContentType.Application.Json)
         }
 
